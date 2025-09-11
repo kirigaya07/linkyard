@@ -15,6 +15,21 @@ const BOARD_SIZE = 20000;
 const clamp = (n: number, min: number, max: number) =>
   Math.max(min, Math.min(max, n));
 
+// Real page thumbnail (Chrome-like preview) via Microlink
+function previewImageUrl(u: string) {
+  const base = "https://api.microlink.io";
+  const qs = new URLSearchParams({
+    url: u,
+    screenshot: "true",
+    meta: "false",
+    embed: "screenshot.url",
+    "viewport.width": "1200",
+    "viewport.height": "630",
+  });
+  return `${base}/?${qs.toString()}`;
+}
+
+// Quick fallback for domain/title from the URL itself
 function urlToPreview(u: string) {
   try {
     const parsed = new URL(u);
@@ -24,10 +39,9 @@ function urlToPreview(u: string) {
         ? decodeURIComponent(parsed.pathname.replace(/\/$/, ""))
         : "";
     const title = path.split("/").filter(Boolean).slice(-1)[0] || domain || u;
-    const favicon = `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
-    return { domain, title, image: favicon };
+    return { domain, title };
   } catch {
-    return { domain: u, title: u, image: undefined };
+    return { domain: u, title: u };
   }
 }
 
@@ -44,6 +58,7 @@ export default function Board2D() {
   }, [nodes]);
 
   const [url, setUrl] = useState("");
+
   const wrapperRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
@@ -63,7 +78,7 @@ export default function Board2D() {
     y: (py - offset.y) / scale,
   });
 
-  // center view on the board once
+  // Center view on the board once
   useEffect(() => {
     const el = wrapperRef.current;
     if (!el) return;
@@ -74,7 +89,7 @@ export default function Board2D() {
     });
   }, []);
 
-  // paste to add
+  // Paste to add
   useEffect(() => {
     function onPaste(e: ClipboardEvent) {
       const text = e.clipboardData?.getData("text");
@@ -87,7 +102,7 @@ export default function Board2D() {
     return () => window.removeEventListener("paste", onPaste);
   }, []);
 
-  // zoom
+  // Zoom
   useEffect(() => {
     const el = wrapperRef.current;
     if (!el) return;
@@ -104,7 +119,7 @@ export default function Board2D() {
     return () => el.removeEventListener("wheel", onWheel as any);
   }, [scale, offset]);
 
-  // pan
+  // Pan (only when clicking the blank board)
   function onPanStart(e: React.MouseEvent) {
     if (e.target !== contentRef.current) return;
     isPanningRef.current = true;
@@ -122,7 +137,7 @@ export default function Board2D() {
     isPanningRef.current = false;
   }
 
-  // drag nodes
+  // Drag nodes
   function onNodeDragStart(id: string, e: React.MouseEvent) {
     e.stopPropagation();
     draggingIdRef.current = id;
@@ -154,24 +169,50 @@ export default function Board2D() {
     window.removeEventListener("mousemove", onNodeDragMove);
   }
 
+  // Add a link node (with real visual thumbnail)
   function addUrl(u: string) {
     const el = wrapperRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
     const center = screenToBoard(rect.width / 2, rect.height / 2);
-    const { domain, title, image } = urlToPreview(u);
+
+    const { domain, title } = urlToPreview(u);
+    const newId = crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
+
     setNodes((n) => [
       ...n,
       {
-        id: Math.random().toString(36).slice(2),
+        id: newId,
         url: u,
         title,
         domain,
-        image,
+        image: previewImageUrl(u), // real page preview
         x: Math.round(center.x),
         y: Math.round(center.y),
       },
     ]);
+
+    // Optional: upgrade title/desc/image via your /api/scrape route
+    enrichNode(newId, u);
+  }
+
+  async function enrichNode(id: string, link: string) {
+    try {
+      const res = await fetch(`/api/scrape?url=${encodeURIComponent(link)}`);
+      const meta = await res.json();
+      setNodes((curr) =>
+        curr.map((n) =>
+          n.id === id
+            ? {
+                ...n,
+                title: meta.title ?? n.title,
+                domain: meta.domain ?? n.domain,
+                image: meta.imageUrl ?? n.image, // keep screenshot if OG missing
+              }
+            : n
+        )
+      );
+    } catch {}
   }
 
   function recenter() {
@@ -266,12 +307,29 @@ export default function Board2D() {
                 onMouseDown={(e) => onNodeDragStart(n.id, e)}
                 className="w-60 select-none rounded-2xl border border-zinc-200 bg-white p-3 text-left shadow hover:shadow-lg active:cursor-grabbing"
               >
-                <div className="mb-2 flex items-center gap-2 text-xs text-zinc-600">
-                  {n.image && (
-                    <img src={n.image} className="h-4 w-4 rounded-sm" />
-                  )}
-                  <span className="truncate">{n.domain}</span>
+                {/* Visual preview */}
+                <div className="mb-2 w-60 overflow-hidden rounded-xl bg-zinc-100">
+                  <div className="aspect-[16/9] w-60">
+                    {n.image ? (
+                      <img
+                        src={n.image}
+                        className="h-full w-full object-cover"
+                        alt=""
+                        onError={(e) => {
+                          (
+                            e.currentTarget as HTMLImageElement
+                          ).src = `https://www.google.com/s2/favicons?domain=${n.domain}&sz=128`;
+                        }}
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-xs text-zinc-400">
+                        No preview
+                      </div>
+                    )}
+                  </div>
                 </div>
+
+                {/* Text */}
                 <div className="line-clamp-2 text-sm font-semibold">
                   {n.title}
                 </div>
