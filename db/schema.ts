@@ -9,6 +9,16 @@ import {
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
+export const users = pgTable("users", {
+  id: varchar("id", { length: 64 }).primaryKey(), // Clerk userId
+  name: varchar("name", { length: 120 }), // Full name
+  email: varchar("email", { length: 255 }), // Primary email
+  imageUrl: text("image_url"), // Profile picture
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
 export const boards = pgTable("boards", {
   id: varchar("id", { length: 30 }).primaryKey(), // nanoid
   userId: varchar("user_id", { length: 64 }).notNull(), // Clerk user id

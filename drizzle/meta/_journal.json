@@ -8,6 +8,20 @@
       "when": 1757706752373,
       "tag": "0000_solid_emma_frost",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1757708341370,
+      "tag": "0001_friendly_quicksilver",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1757708885561,
+      "tag": "0002_heavy_smasher",
+      "breakpoints": true
     }
   ]
 }
