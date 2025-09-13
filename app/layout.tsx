@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ClerkProvider } from "@clerk/nextjs";
 import Header from "@/components/header"; // Note: capital H + matching filename
+import { Toaster } from "sonner";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({
@@ -28,6 +29,7 @@ export default function RootLayout({
         >
           <Header />
           {children}
+          <Toaster position="top-right" richColors />
         </body>
       </html>
     </ClerkProvider>

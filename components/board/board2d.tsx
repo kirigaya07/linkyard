@@ -1,5 +1,9 @@
 "use client";
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
+import ConfirmationDialog from "@/components/ui/confirmation-dialog";
+import LoadingSpinner from "@/components/ui/loading-spinner";
+import ShareButton from "@/components/ui/share-button";
 
 type LinkNode = {
   id: string;
@@ -48,6 +52,29 @@ function urlToPreview(u: string) {
 export default function Board2D() {
   const [nodes, setNodes] = useState<LinkNode[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isAddingBookmark, setIsAddingBookmark] = useState(false);
+  const [isClearingBookmarks, setIsClearingBookmarks] = useState(false);
+  const [isUpdatingPosition, setIsUpdatingPosition] = useState<string | null>(
+    null
+  );
+  const [isEnriching, setIsEnriching] = useState<string | null>(null);
+  const [isDeletingBookmark, setIsDeletingBookmark] = useState<string | null>(
+    null
+  );
+  const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
+
+  // Confirmation dialog state
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    description: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: "",
+    description: "",
+    onConfirm: () => {},
+  });
 
   // Load bookmarks from database on component mount
   useEffect(() => {
@@ -77,14 +104,32 @@ export default function Board2D() {
               })
             )
           );
+          toast.success(
+            `Loaded ${bookmarks.length} bookmark${
+              bookmarks.length !== 1 ? "s" : ""
+            }`
+          );
+        } else {
+          toast.error("Failed to load bookmarks");
         }
       } catch (error) {
         console.error("Failed to load bookmarks:", error);
+        toast.error("Failed to load bookmarks");
       } finally {
         setIsLoading(false);
       }
     }
     loadBookmarks();
+  }, []);
+
+  // Cleanup event listeners on unmount
+  useEffect(() => {
+    return () => {
+      document.removeEventListener("mousemove", onNodeDragMove);
+      document.removeEventListener("mouseup", onNodeDragEnd);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
   }, []);
 
   const [url, setUrl] = useState("");
@@ -157,37 +202,58 @@ export default function Board2D() {
 
   // Pan (only when clicking the blank board)
   function onPanStart(e: React.MouseEvent) {
+    // Don't pan if we're dragging a node
+    if (draggingIdRef.current) return;
     if (e.target !== contentRef.current) return;
+
     isPanningRef.current = true;
     panStartRef.current = { x: e.clientX, y: e.clientY };
     offsetStartRef.current = { ...offset };
+
+    // Add cursor style
+    document.body.style.cursor = "grabbing";
   }
+
   function onPanMove(e: React.MouseEvent) {
     if (!isPanningRef.current) return;
-    const el = wrapperRef.current;
-    if (!el) return;
     setOffset({
       x: offsetStartRef.current.x + (e.clientX - panStartRef.current.x),
       y: offsetStartRef.current.y + (e.clientY - panStartRef.current.y),
     });
   }
+
   function onPanEnd() {
-    isPanningRef.current = false;
+    if (isPanningRef.current) {
+      isPanningRef.current = false;
+      document.body.style.cursor = "";
+    }
   }
 
   // Drag nodes
   function onNodeDragStart(id: string, e: React.MouseEvent) {
     e.stopPropagation();
+    e.preventDefault();
+
     draggingIdRef.current = id;
+    setDraggedNodeId(id);
     dragStartRef.current = { x: e.clientX, y: e.clientY };
     const n = nodes.find((n) => n.id === id)!;
     nodeStartRef.current = { x: n.x, y: n.y };
-    window.addEventListener("mousemove", onNodeDragMove);
-    window.addEventListener("mouseup", onNodeDragEnd, { once: true });
+
+    // Add cursor style and prevent text selection
+    document.body.style.cursor = "grabbing";
+    document.body.style.userSelect = "none";
+
+    // Add event listeners
+    document.addEventListener("mousemove", onNodeDragMove, { passive: false });
+    document.addEventListener("mouseup", onNodeDragEnd, { once: true });
   }
+
   function onNodeDragMove(e: MouseEvent) {
+    e.preventDefault();
     const id = draggingIdRef.current;
     if (!id) return;
+
     const dx = (e.clientX - dragStartRef.current.x) / scale;
     const dy = (e.clientY - dragStartRef.current.y) / scale;
     const newX = Math.round(nodeStartRef.current.x + dx);
@@ -205,25 +271,42 @@ export default function Board2D() {
       )
     );
   }
-  async function onNodeDragEnd() {
+
+  async function onNodeDragEnd(e: MouseEvent) {
+    e.preventDefault();
     const id = draggingIdRef.current;
+
+    // Clean up cursor and event listeners first
+    document.body.style.cursor = "";
+    document.body.style.userSelect = "";
+    document.removeEventListener("mousemove", onNodeDragMove);
+    setDraggedNodeId(null);
+
     if (id) {
       const node = nodes.find((n) => n.id === id);
       if (node) {
-        // Save position to database
+        setIsUpdatingPosition(id);
         try {
-          await fetch(`/api/bookmarks/${id}`, {
+          const response = await fetch(`/api/bookmarks/${id}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ x: node.x, y: node.y }),
           });
+
+          if (response.ok) {
+            toast.success("Position saved");
+          } else {
+            toast.error("Failed to save position");
+          }
         } catch (error) {
           console.error("Failed to save bookmark position:", error);
+          toast.error("Failed to save position");
+        } finally {
+          setIsUpdatingPosition(null);
         }
       }
     }
     draggingIdRef.current = null;
-    window.removeEventListener("mousemove", onNodeDragMove);
   }
 
   // Add a link node (with real visual thumbnail)
@@ -237,6 +320,7 @@ export default function Board2D() {
     const x = Math.round(center.x);
     const y = Math.round(center.y);
 
+    setIsAddingBookmark(true);
     try {
       // Create bookmark in database
       const response = await fetch("/api/bookmarks", {
@@ -265,18 +349,23 @@ export default function Board2D() {
         };
 
         setNodes((n) => [...n, newNode]);
+        toast.success("Bookmark added successfully!");
 
         // Optional: upgrade title/desc/image via your /api/scrape route
         enrichNode(bookmark.id, u);
       } else {
-        console.error("Failed to create bookmark");
+        toast.error("Failed to create bookmark");
       }
     } catch (error) {
       console.error("Error creating bookmark:", error);
+      toast.error("Failed to create bookmark");
+    } finally {
+      setIsAddingBookmark(false);
     }
   }
 
   async function enrichNode(id: string, link: string) {
+    setIsEnriching(id);
     try {
       const res = await fetch(`/api/scrape?url=${encodeURIComponent(link)}`);
       const meta = await res.json();
@@ -297,7 +386,7 @@ export default function Board2D() {
 
       // Update database with enriched metadata
       try {
-        await fetch(`/api/bookmarks/${id}`, {
+        const response = await fetch(`/api/bookmarks/${id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -306,10 +395,20 @@ export default function Board2D() {
             imageUrl: meta.imageUrl,
           }),
         });
+
+        if (response.ok) {
+          toast.success("Bookmark metadata updated");
+        }
       } catch (error) {
         console.error("Failed to update bookmark metadata:", error);
+        toast.error("Failed to update bookmark metadata");
       }
-    } catch {}
+    } catch (error) {
+      console.error("Failed to enrich bookmark:", error);
+      toast.error("Failed to enrich bookmark");
+    } finally {
+      setIsEnriching(null);
+    }
   }
 
   function recenter() {
@@ -323,19 +422,65 @@ export default function Board2D() {
     });
   }
 
-  async function clearAll(e?: React.MouseEvent) {
-    e?.preventDefault();
+  function showClearConfirmation() {
+    setConfirmDialog({
+      isOpen: true,
+      title: "Clear All Bookmarks",
+      description:
+        "Are you sure you want to delete all bookmarks? This action cannot be undone.",
+      onConfirm: clearAllBookmarks,
+    });
+  }
+
+  function showDeleteBookmarkConfirmation(
+    bookmarkId: string,
+    bookmarkTitle: string
+  ) {
+    setConfirmDialog({
+      isOpen: true,
+      title: "Delete Bookmark",
+      description: `Are you sure you want to delete "${bookmarkTitle}"? This action cannot be undone.`,
+      onConfirm: () => deleteBookmark(bookmarkId),
+    });
+  }
+
+  async function clearAllBookmarks() {
+    setIsClearingBookmarks(true);
     try {
       const response = await fetch("/api/bookmarks/clear", {
         method: "DELETE",
       });
       if (response.ok) {
         setNodes([]);
+        toast.success("All bookmarks cleared");
       } else {
-        console.error("Failed to clear bookmarks");
+        toast.error("Failed to clear bookmarks");
       }
     } catch (error) {
       console.error("Error clearing bookmarks:", error);
+      toast.error("Failed to clear bookmarks");
+    } finally {
+      setIsClearingBookmarks(false);
+    }
+  }
+
+  async function deleteBookmark(bookmarkId: string) {
+    setIsDeletingBookmark(bookmarkId);
+    try {
+      const response = await fetch(`/api/bookmarks/${bookmarkId}`, {
+        method: "DELETE",
+      });
+      if (response.ok) {
+        setNodes((prev) => prev.filter((node) => node.id !== bookmarkId));
+        toast.success("Bookmark deleted");
+      } else {
+        toast.error("Failed to delete bookmark");
+      }
+    } catch (error) {
+      console.error("Error deleting bookmark:", error);
+      toast.error("Failed to delete bookmark");
+    } finally {
+      setIsDeletingBookmark(null);
     }
   }
 
@@ -383,9 +528,17 @@ export default function Board2D() {
                 setUrl("");
               }
             }}
-            className="rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white"
+            disabled={isAddingBookmark || !url}
+            className="rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
-            Add
+            {isAddingBookmark ? (
+              <>
+                <LoadingSpinner size="sm" />
+                Adding...
+              </>
+            ) : (
+              "Add"
+            )}
           </button>
           <button
             onClick={recenter}
@@ -393,13 +546,21 @@ export default function Board2D() {
           >
             Recenter
           </button>
-          <a
-            href="#"
-            onClick={clearAll}
-            className="rounded-xl border border-zinc-300 px-3 py-2 text-sm"
+          <button
+            onClick={showClearConfirmation}
+            disabled={isClearingBookmarks || nodes.length === 0}
+            className="rounded-xl border border-zinc-300 px-3 py-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
-            Clear
-          </a>
+            {isClearingBookmarks ? (
+              <>
+                <LoadingSpinner size="sm" />
+                Clearing...
+              </>
+            ) : (
+              "Clear"
+            )}
+          </button>
+          <ShareButton />
         </div>
       </div>
 
@@ -425,13 +586,36 @@ export default function Board2D() {
           {nodes.map((n) => (
             <div
               key={n.id}
-              className="absolute"
-              style={{ transform: `translate(${n.x}px, ${n.y}px)` }}
+              className={`absolute transition-all duration-200 ${
+                draggedNodeId === n.id ? "z-50" : "z-10"
+              }`}
+              style={{
+                transform: `translate(${n.x}px, ${n.y}px)`,
+                ...(draggedNodeId === n.id && {
+                  filter: "drop-shadow(0 20px 25px rgb(0 0 0 / 0.15))",
+                }),
+              }}
             >
               <div
                 onMouseDown={(e) => onNodeDragStart(n.id, e)}
-                className="w-60 select-none rounded-2xl border border-zinc-200 bg-white p-3 text-left shadow hover:shadow-lg active:cursor-grabbing"
+                className="w-60 select-none rounded-2xl border border-zinc-200 bg-white p-3 text-left shadow hover:shadow-lg cursor-grab active:cursor-grabbing relative transition-shadow duration-200"
               >
+                {/* Delete button */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    showDeleteBookmarkConfirmation(n.id, n.title);
+                  }}
+                  disabled={isDeletingBookmark === n.id}
+                  className="absolute -top-2 -right-2 w-7 h-7 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl transition-all duration-200 z-10"
+                  title="Delete bookmark"
+                >
+                  {isDeletingBookmark === n.id ? (
+                    <LoadingSpinner size="sm" />
+                  ) : (
+                    "×"
+                  )}
+                </button>
                 {/* Visual preview */}
                 <div className="mb-2 w-60 overflow-hidden rounded-xl bg-zinc-100">
                   <div className="aspect-[16/9] w-60">
@@ -466,15 +650,33 @@ export default function Board2D() {
                   >
                     Open
                   </a>
-                  <span className="rounded-lg border border-zinc-200 px-2 py-1">
-                    Drag
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {isUpdatingPosition === n.id && (
+                      <LoadingSpinner size="sm" />
+                    )}
+                    {isEnriching === n.id && <LoadingSpinner size="sm" />}
+                    <span className="rounded-lg border border-zinc-200 px-2 py-1 text-zinc-500 hover:text-zinc-700 transition-colors">
+                      Drag
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
           ))}
         </div>
       </div>
+
+      {/* Confirmation Dialog */}
+      <ConfirmationDialog
+        isOpen={confirmDialog.isOpen}
+        onClose={() => setConfirmDialog((prev) => ({ ...prev, isOpen: false }))}
+        onConfirm={confirmDialog.onConfirm}
+        title={confirmDialog.title}
+        description={confirmDialog.description}
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="destructive"
+      />
     </div>
   );
 }
