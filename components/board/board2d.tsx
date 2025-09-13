@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 
 type LinkNode = {
   id: string;
@@ -46,16 +46,46 @@ function urlToPreview(u: string) {
 }
 
 export default function Board2D() {
-  const [nodes, setNodes] = useState<LinkNode[]>(() => {
-    try {
-      return JSON.parse(localStorage.getItem("linkyard-nodes") || "[]");
-    } catch {
-      return [];
-    }
-  });
+  const [nodes, setNodes] = useState<LinkNode[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Load bookmarks from database on component mount
   useEffect(() => {
-    localStorage.setItem("linkyard-nodes", JSON.stringify(nodes));
-  }, [nodes]);
+    async function loadBookmarks() {
+      try {
+        const response = await fetch("/api/bookmarks");
+        if (response.ok) {
+          const bookmarks = await response.json();
+          setNodes(
+            bookmarks.map(
+              (bookmark: {
+                id: string;
+                url: string;
+                title: string | null;
+                domain: string;
+                imageUrl: string | null;
+                x: number;
+                y: number;
+              }) => ({
+                id: bookmark.id,
+                url: bookmark.url,
+                title: bookmark.title || bookmark.domain,
+                domain: bookmark.domain,
+                image: bookmark.imageUrl,
+                x: bookmark.x,
+                y: bookmark.y,
+              })
+            )
+          );
+        }
+      } catch (error) {
+        console.error("Failed to load bookmarks:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    loadBookmarks();
+  }, []);
 
   const [url, setUrl] = useState("");
 
@@ -73,10 +103,13 @@ export default function Board2D() {
   const dragStartRef = useRef({ x: 0, y: 0 });
   const nodeStartRef = useRef({ x: 0, y: 0 });
 
-  const screenToBoard = (px: number, py: number) => ({
-    x: (px - offset.x) / scale,
-    y: (py - offset.y) / scale,
-  });
+  const screenToBoard = useCallback(
+    (px: number, py: number) => ({
+      x: (px - offset.x) / scale,
+      y: (py - offset.y) / scale,
+    }),
+    [offset.x, offset.y, scale]
+  );
 
   // Center view on the board once
   useEffect(() => {
@@ -89,13 +122,14 @@ export default function Board2D() {
     });
   }, []);
 
-  // Paste to add
+  // Paste to populate input field
   useEffect(() => {
     function onPaste(e: ClipboardEvent) {
       const text = e.clipboardData?.getData("text");
       if (!text) return;
       try {
-        addUrl(new URL(text.trim()).toString());
+        const url = new URL(text.trim()).toString();
+        setUrl(url);
       } catch {}
     }
     window.addEventListener("paste", onPaste);
@@ -108,7 +142,9 @@ export default function Board2D() {
     if (!el) return;
     function onWheel(e: WheelEvent) {
       e.preventDefault();
-      const rect = el.getBoundingClientRect();
+      const currentEl = wrapperRef.current;
+      if (!currentEl) return;
+      const rect = currentEl.getBoundingClientRect();
       const mouse = { x: e.clientX - rect.left, y: e.clientY - rect.top };
       const before = screenToBoard(mouse.x, mouse.y);
       const next = clamp(scale * (e.deltaY < 0 ? 1.1 : 0.9), 0.3, 2.5);
@@ -116,8 +152,8 @@ export default function Board2D() {
       setOffset({ x: mouse.x - before.x * next, y: mouse.y - before.y * next });
     }
     el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel as any);
-  }, [scale, offset]);
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [scale, offset, screenToBoard]);
 
   // Pan (only when clicking the blank board)
   function onPanStart(e: React.MouseEvent) {
@@ -128,6 +164,8 @@ export default function Board2D() {
   }
   function onPanMove(e: React.MouseEvent) {
     if (!isPanningRef.current) return;
+    const el = wrapperRef.current;
+    if (!el) return;
     setOffset({
       x: offsetStartRef.current.x + (e.clientX - panStartRef.current.x),
       y: offsetStartRef.current.y + (e.clientY - panStartRef.current.y),
@@ -152,54 +190,98 @@ export default function Board2D() {
     if (!id) return;
     const dx = (e.clientX - dragStartRef.current.x) / scale;
     const dy = (e.clientY - dragStartRef.current.y) / scale;
+    const newX = Math.round(nodeStartRef.current.x + dx);
+    const newY = Math.round(nodeStartRef.current.y + dy);
+
     setNodes((curr) =>
       curr.map((n) =>
         n.id === id
           ? {
               ...n,
-              x: Math.round(nodeStartRef.current.x + dx),
-              y: Math.round(nodeStartRef.current.y + dy),
+              x: newX,
+              y: newY,
             }
           : n
       )
     );
   }
-  function onNodeDragEnd() {
+  async function onNodeDragEnd() {
+    const id = draggingIdRef.current;
+    if (id) {
+      const node = nodes.find((n) => n.id === id);
+      if (node) {
+        // Save position to database
+        try {
+          await fetch(`/api/bookmarks/${id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ x: node.x, y: node.y }),
+          });
+        } catch (error) {
+          console.error("Failed to save bookmark position:", error);
+        }
+      }
+    }
     draggingIdRef.current = null;
     window.removeEventListener("mousemove", onNodeDragMove);
   }
 
   // Add a link node (with real visual thumbnail)
-  function addUrl(u: string) {
+  async function addUrl(u: string) {
     const el = wrapperRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
     const center = screenToBoard(rect.width / 2, rect.height / 2);
 
     const { domain, title } = urlToPreview(u);
-    const newId = crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
+    const x = Math.round(center.x);
+    const y = Math.round(center.y);
 
-    setNodes((n) => [
-      ...n,
-      {
-        id: newId,
-        url: u,
-        title,
-        domain,
-        image: previewImageUrl(u), // real page preview
-        x: Math.round(center.x),
-        y: Math.round(center.y),
-      },
-    ]);
+    try {
+      // Create bookmark in database
+      const response = await fetch("/api/bookmarks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: u,
+          domain,
+          title,
+          x,
+          y,
+          imageUrl: previewImageUrl(u),
+        }),
+      });
 
-    // Optional: upgrade title/desc/image via your /api/scrape route
-    enrichNode(newId, u);
+      if (response.ok) {
+        const bookmark = await response.json();
+        const newNode: LinkNode = {
+          id: bookmark.id,
+          url: bookmark.url,
+          title: bookmark.title || domain,
+          domain: bookmark.domain,
+          image: bookmark.imageUrl,
+          x: bookmark.x,
+          y: bookmark.y,
+        };
+
+        setNodes((n) => [...n, newNode]);
+
+        // Optional: upgrade title/desc/image via your /api/scrape route
+        enrichNode(bookmark.id, u);
+      } else {
+        console.error("Failed to create bookmark");
+      }
+    } catch (error) {
+      console.error("Error creating bookmark:", error);
+    }
   }
 
   async function enrichNode(id: string, link: string) {
     try {
       const res = await fetch(`/api/scrape?url=${encodeURIComponent(link)}`);
       const meta = await res.json();
+
+      // Update local state
       setNodes((curr) =>
         curr.map((n) =>
           n.id === id
@@ -212,6 +294,21 @@ export default function Board2D() {
             : n
         )
       );
+
+      // Update database with enriched metadata
+      try {
+        await fetch(`/api/bookmarks/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: meta.title,
+            description: meta.description,
+            imageUrl: meta.imageUrl,
+          }),
+        });
+      } catch (error) {
+        console.error("Failed to update bookmark metadata:", error);
+      }
     } catch {}
   }
 
@@ -226,21 +323,43 @@ export default function Board2D() {
     });
   }
 
-  function clearAll(e?: React.MouseEvent) {
+  async function clearAll(e?: React.MouseEvent) {
     e?.preventDefault();
-    localStorage.removeItem("linkyard-nodes");
-    setNodes([]);
+    try {
+      const response = await fetch("/api/bookmarks/clear", {
+        method: "DELETE",
+      });
+      if (response.ok) {
+        setNodes([]);
+      } else {
+        console.error("Failed to clear bookmarks");
+      }
+    } catch (error) {
+      console.error("Error clearing bookmarks:", error);
+    }
+  }
+
+  if (isLoading) {
+    return (
+      <div className="h-full w-full bg-white text-zinc-900 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-lg font-semibold">Loading your bookmarks...</div>
+          <div className="text-sm text-zinc-500 mt-2">Please wait</div>
+        </div>
+      </div>
+    );
   }
 
   return (
     <div className="h-full w-full bg-white text-zinc-900">
       {/* hint */}
-      <div className="pointer-events-none fixed left-4 top-4 z-50 rounded-xl border border-zinc-200 bg-white/90 p-3 text-xs text-zinc-700 shadow">
+      {/* <div className="pointer-events-none fixed left-4 top-4 z-50 rounded-xl border border-zinc-200 bg-white/90 p-3 text-xs text-zinc-700 shadow">
         <div className="font-semibold">Linkyard – 2D Board</div>
         <div>
-          Paste a URL • Drag cards • Wheel to zoom • Drag background to pan
+          Paste or type a URL • Press Enter or click Add • Drag cards • Wheel to
+          zoom • Drag background to pan
         </div>
-      </div>
+      </div> */}
 
       {/* controls */}
       <div className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-2xl border border-zinc-200 bg-white/90 p-2 shadow">
@@ -248,13 +367,19 @@ export default function Board2D() {
           <input
             value={url}
             onChange={(e) => setUrl(e.target.value)}
+            onKeyDown={async (e) => {
+              if (e.key === "Enter" && url) {
+                await addUrl(url);
+                setUrl("");
+              }
+            }}
             placeholder="Paste or type a link…"
             className="w-[420px] rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
           />
           <button
-            onClick={() => {
+            onClick={async () => {
               if (url) {
-                addUrl(url);
+                await addUrl(url);
                 setUrl("");
               }
             }}
