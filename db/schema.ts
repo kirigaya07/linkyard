@@ -24,6 +24,7 @@ export const boards = pgTable("boards", {
   userId: varchar("user_id", { length: 64 }).notNull(), // Clerk user id
   name: varchar("name", { length: 120 }).notNull().default("My Board"),
   isPublic: boolean("is_public").notNull().default(false),
+  shareToken: varchar("share_token", { length: 30 }), // For secure sharing
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

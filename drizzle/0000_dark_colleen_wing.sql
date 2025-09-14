@@ -3,6 +3,7 @@ CREATE TABLE "boards" (
 	"user_id" varchar(64) NOT NULL,
 	"name" varchar(120) DEFAULT 'My Board' NOT NULL,
 	"is_public" boolean DEFAULT false NOT NULL,
+	"share_token" varchar(30),
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
@@ -29,6 +30,14 @@ CREATE TABLE "tags" (
 	"id" varchar(30) PRIMARY KEY NOT NULL,
 	"user_id" varchar(64) NOT NULL,
 	"name" varchar(50) NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "users" (
+	"id" varchar(64) PRIMARY KEY NOT NULL,
+	"name" varchar(120),
+	"email" varchar(255),
+	"image_url" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
