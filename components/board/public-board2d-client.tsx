@@ -25,12 +25,14 @@ interface PublicBoard2DClientProps {
   shareToken: string;
 }
 
-export default function PublicBoard2DClient({ shareToken }: PublicBoard2DClientProps) {
+export default function PublicBoard2DClient({
+  shareToken,
+}: PublicBoard2DClientProps) {
   const [nodes, setNodes] = useState<PublicLinkNode[]>([]);
   const [board, setBoard] = useState<PublicBoard | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
+
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
 
@@ -54,26 +56,33 @@ export default function PublicBoard2DClient({ shareToken }: PublicBoard2DClientP
     async function loadBoardData() {
       try {
         console.log("Loading board data for shareToken:", shareToken);
-        const response = await fetch(`/api/board/${shareToken}`);
+        const response = await fetch(`/api/board/${shareToken}`, {
+          cache: "no-store",
+          headers: {
+            "Cache-Control": "no-store",
+          },
+        });
         console.log("Response status:", response.status);
-        
+
         if (!response.ok) {
           throw new Error(`Failed to load board: ${response.status}`);
         }
-        
+
         const data = await response.json();
         console.log("Received data:", data);
-        
+
         setBoard(data.board);
         setNodes(data.bookmarks || []);
       } catch (error) {
         console.error("Error loading board:", error);
-        setError(error instanceof Error ? error.message : "Failed to load board");
+        setError(
+          error instanceof Error ? error.message : "Failed to load board"
+        );
       } finally {
         setIsLoading(false);
       }
     }
-    
+
     loadBoardData();
   }, [shareToken]);
 
@@ -162,7 +171,9 @@ export default function PublicBoard2DClient({ shareToken }: PublicBoard2DClientP
         <div className="text-center">
           <div className="text-lg font-semibold text-red-600">Error</div>
           <div className="text-sm text-zinc-500 mt-2">{error}</div>
-          <div className="text-xs text-zinc-400 mt-4">ShareToken: {shareToken}</div>
+          <div className="text-xs text-zinc-400 mt-4">
+            ShareToken: {shareToken}
+          </div>
         </div>
       </div>
     );
@@ -174,7 +185,9 @@ export default function PublicBoard2DClient({ shareToken }: PublicBoard2DClientP
       <div className="fixed top-4 left-4 z-50 rounded-xl border border-zinc-200 bg-white/90 p-3 text-xs text-zinc-700 shadow">
         <div className="font-semibold">{board?.name || "Shared Board"}</div>
         <div className="text-zinc-500">Shared Board • View Only</div>
-        <div className="text-zinc-400 mt-1">{nodes.length} bookmark{nodes.length !== 1 ? 's' : ''}</div>
+        <div className="text-zinc-400 mt-1">
+          {nodes.length} bookmark{nodes.length !== 1 ? "s" : ""}
+        </div>
       </div>
 
       {/* Controls */}
