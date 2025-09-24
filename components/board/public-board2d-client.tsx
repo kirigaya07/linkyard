@@ -1,5 +1,6 @@
 "use client";
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import Image from "next/image";
 
 type PublicLinkNode = {
   id: string;
@@ -235,17 +236,14 @@ export default function PublicBoard2DClient({
               <div className="w-60 select-none rounded-2xl border border-zinc-200 bg-white p-3 text-left shadow hover:shadow-lg transition-shadow duration-200">
                 {/* Visual preview */}
                 <div className="mb-2 w-60 overflow-hidden rounded-xl bg-zinc-100">
-                  <div className="aspect-[16/9] w-60">
+                  <div className="aspect-[16/9] w-60 relative">
                     {n.image ? (
-                      <img
+                      <Image
                         src={n.image}
-                        className="h-full w-full object-cover"
                         alt=""
-                        onError={(e) => {
-                          (
-                            e.currentTarget as HTMLImageElement
-                          ).src = `https://www.google.com/s2/favicons?domain=${n.domain}&sz=128`;
-                        }}
+                        fill
+                        className="object-cover"
+                        sizes="240px"
                       />
                     ) : (
                       <div className="flex h-full w-full items-center justify-center text-xs text-zinc-400">
