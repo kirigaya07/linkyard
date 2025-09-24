@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { currentUser } from "@clerk/nextjs/server";
-import { generateShareToken, getUserBoardWithShareToken, revokeShareToken } from "@/lib/share";
+import {
+  generateShareToken,
+  getUserBoardWithShareToken,
+  revokeShareToken,
+} from "@/lib/share";
 
 export async function POST(request: NextRequest) {
   try {
@@ -10,38 +14,40 @@ export async function POST(request: NextRequest) {
     }
 
     const { action } = await request.json();
-    
+
     if (action === "generate") {
       const board = await getUserBoardWithShareToken(user.id);
       console.log("Found board for user:", board);
-      
+
       if (!board) {
         return NextResponse.json({ error: "Board not found" }, { status: 404 });
       }
-      
+
       const shareToken = await generateShareToken(board.id, user.id);
       console.log("Generated shareToken:", shareToken);
-      
-      const shareUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/board/${shareToken}`;
+
+      // Build share URL from the incoming request origin (works in prod/preview/dev)
+      const origin = request.nextUrl.origin;
+      const shareUrl = `${origin}/board/${shareToken}`;
       console.log("Generated shareUrl:", shareUrl);
-      
-      return NextResponse.json({ 
-        shareToken, 
+
+      return NextResponse.json({
+        shareToken,
         shareUrl,
-        boardId: board.id 
+        boardId: board.id,
       });
     }
-    
+
     if (action === "revoke") {
       const board = await getUserBoardWithShareToken(user.id);
       if (!board) {
         return NextResponse.json({ error: "Board not found" }, { status: 404 });
       }
-      
+
       await revokeShareToken(board.id, user.id);
       return NextResponse.json({ success: true });
     }
-    
+
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
   } catch (error) {
     console.error("Error managing share:", error);
@@ -52,7 +58,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const user = await currentUser();
     if (!user) {
@@ -63,15 +69,16 @@ export async function GET() {
     if (!board) {
       return NextResponse.json({ error: "Board not found" }, { status: 404 });
     }
-    
-    const shareUrl = board.shareToken 
-      ? `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/board/${board.shareToken}`
+
+    const origin = request.nextUrl.origin;
+    const shareUrl = board.shareToken
+      ? `${origin}/board/${board.shareToken}`
       : null;
-    
-    return NextResponse.json({ 
+
+    return NextResponse.json({
       shareToken: board.shareToken,
       shareUrl,
-      isShared: !!board.shareToken 
+      isShared: !!board.shareToken,
     });
   } catch (error) {
     console.error("Error getting share status:", error);
