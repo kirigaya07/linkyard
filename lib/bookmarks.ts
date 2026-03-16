@@ -2,10 +2,12 @@ import { db } from "@/db/client";
 import { bookmarks, boards } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import { clearBoardCollections } from "./clustering";
 
 export type Bookmark = {
   id: string;
   boardId: string;
+  collectionId: string | null;
   url: string;
   domain: string;
   title: string | null;
@@ -56,7 +58,19 @@ export async function getUserBookmarks(userId: string): Promise<Bookmark[]> {
     .from(bookmarks)
     .where(eq(bookmarks.boardId, board.id));
 
-  return userBookmarks;
+  return userBookmarks.map((bookmark) => ({
+    id: bookmark.id,
+    boardId: bookmark.boardId,
+    collectionId: bookmark.collectionId,
+    url: bookmark.url,
+    domain: bookmark.domain,
+    title: bookmark.title,
+    description: bookmark.description,
+    imageUrl: bookmark.imageUrl,
+    x: bookmark.x,
+    y: bookmark.y,
+    createdAt: bookmark.createdAt,
+  }));
 }
 
 /**
@@ -146,10 +160,14 @@ export async function deleteBookmark(
 }
 
 /**
- * Clear all bookmarks for a user
+ * Clear all bookmarks and collections for a user
  */
 export async function clearUserBookmarks(userId: string): Promise<void> {
   const board = await getOrCreateUserBoard(userId);
 
+  // Clear all collections for this board first (this also removes collection assignments)
+  await clearBoardCollections(board.id);
+
+  // Then delete all bookmarks
   await db.delete(bookmarks).where(eq(bookmarks.boardId, board.id));
 }

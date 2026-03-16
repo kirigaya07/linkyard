@@ -12,38 +12,56 @@ import { Badge } from "@/components/ui/badge";
 
 export default function HomePage() {
   return (
-    <main className="relative min-h-dvh overflow-hidden bg-white">
-      {/* Background */}
+    <main className="relative min-h-dvh overflow-hidden bg-gradient-to-br from-slate-50 via-white to-indigo-50">
+      {/* Modern Background */}
       <div className="pointer-events-none absolute inset-0 -z-10">
-        <div className="absolute inset-0 bg-[radial-gradient(60rem_40rem_at_50%_-10%,rgba(99,102,241,.12),transparent)]" />
-        <div className="absolute inset-0 bg-[radial-gradient(40rem_30rem_at_80%_20%,rgba(16,185,129,.08),transparent)]" />
-        <div className="absolute inset-0 bg-[radial-gradient(50rem_30rem_at_10%_80%,rgba(244,114,182,.08),transparent)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(80rem_50rem_at_50%_-20%,rgba(99,102,241,.15),transparent)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(60rem_40rem_at_80%_30%,rgba(16,185,129,.12),transparent)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(70rem_40rem_at_10%_90%,rgba(244,114,182,.12),transparent)]" />
+        <div className="absolute top-0 right-0 w-96 h-96 bg-gradient-to-bl from-purple-400/20 to-transparent rounded-full blur-3xl" />
+        <div className="absolute bottom-0 left-0 w-96 h-96 bg-gradient-to-tr from-blue-400/20 to-transparent rounded-full blur-3xl" />
       </div>
 
       {/* Hero */}
       <section className="mx-auto max-w-6xl px-4 py-20 sm:px-6 lg:px-8">
         <div className="flex flex-col items-center text-center">
-          <Badge className="mb-4 rounded-full px-3 py-1 text-xs">
-            New · Linkyard 0.1
+          <Badge className="mb-6 glass rounded-full px-4 py-2 text-sm font-semibold border border-white/20 shadow-modern animate-fade-in">
+            ✨ New · Linkyard v0.1 · Smart Collections
           </Badge>
 
-          <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-zinc-900 sm:text-5xl">
+          <h1 className="max-w-4xl text-5xl font-bold tracking-tight text-slate-900 sm:text-6xl animate-slide-up">
             Your links, on an{" "}
-            <span className="bg-gradient-to-r from-indigo-600 via-fuchsia-600 to-emerald-500 bg-clip-text text-transparent">
-              infinite whiteboard
+            <span className="bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-500 bg-clip-text text-transparent animate-pulse">
+              infinite canvas
             </span>
             .
           </h1>
 
-          <p className="mt-4 max-w-2xl text-base leading-7 text-zinc-600 sm:text-lg">
-            Paste any URL. Linkyard drops a draggable, zoomable card with a live
-            preview. Organize, cluster, and think spatially.
+          <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-600 font-medium animate-slide-up">
+            Drop any URL onto your infinite workspace. AI-powered smart
+            clustering organizes your bookmarks automatically. Think spatially,
+            work visually.
           </p>
 
-          <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+          <div className="mt-10 flex flex-wrap items-center justify-center gap-4 animate-slide-up">
             <SignedOut>
               <SignUpButton mode="modal">
-                <Button className="h-11 rounded-full px-6">Get Started</Button>
+                <Button className="h-14 rounded-2xl px-8 text-base font-semibold btn-gradient shadow-modern hover:scale-105 transition-all duration-200">
+                  <svg
+                    className="w-5 h-5 mr-2"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M13 10V3L4 14h7v7l9-11h-7z"
+                    />
+                  </svg>
+                  Get Started Free
+                </Button>
               </SignUpButton>
               <SignInButton mode="modal">
                 <Button

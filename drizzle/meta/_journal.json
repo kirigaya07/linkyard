@@ -8,6 +8,20 @@
       "when": 1757793434758,
       "tag": "0000_dark_colleen_wing",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1759949052420,
+      "tag": "0001_fat_starfox",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1759951070217,
+      "tag": "0002_nifty_karnak",
+      "breakpoints": true
     }
   ]
 }
