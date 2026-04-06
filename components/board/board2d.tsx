@@ -6,6 +6,7 @@ import LoadingSpinner from "@/components/ui/loading-spinner";
 import ShareButton from "@/components/ui/share-button";
 import CollectionContainer from "@/components/ui/collection-container";
 import ClusteringSuggestionsDialog from "@/components/ui/clustering-suggestions-dialog";
+import { useBoardData } from "@/lib/hooks/useBoardData";
 
 type LinkNode = {
   id: string;
@@ -21,7 +22,7 @@ type LinkNode = {
 type Collection = {
   id: string;
   name: string;
-  description?: string;
+  description?: string | null;
   color: string;
   x: number;
   y: number;
@@ -76,9 +77,18 @@ function urlToPreview(u: string) {
 }
 
 export default function Board2D() {
-  const [nodes, setNodes] = useState<LinkNode[]>([]);
-  const [collections, setCollections] = useState<Collection[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const {
+    nodes,
+    collections,
+    isLoading,
+    addNodeOptimistic,
+    updateNodePositionOptimistic,
+    deleteNodeOptimistic,
+    clearAllOptimistic,
+    addCollectionOptimistic,
+    deleteCollectionOptimistic,
+    updateNodeMetaOptimistic,
+  } = useBoardData();
   const [isAddingBookmark, setIsAddingBookmark] = useState(false);
   const [isClearingBookmarks, setIsClearingBookmarks] = useState(false);
   const [isUpdatingPosition, setIsUpdatingPosition] = useState<string | null>(
@@ -116,63 +126,14 @@ export default function Board2D() {
     onConfirm: () => {},
   });
 
-  // Load bookmarks and collections from database on component mount
+  // Initial toast on successful load
   useEffect(() => {
-    async function loadData() {
-      try {
-        // Load bookmarks
-        const bookmarksResponse = await fetch("/api/bookmarks");
-        if (bookmarksResponse.ok) {
-          const bookmarks = await bookmarksResponse.json();
-          setNodes(
-            bookmarks.map(
-              (bookmark: {
-                id: string;
-                url: string;
-                title: string | null;
-                domain: string;
-                imageUrl: string | null;
-                collectionId: string | null;
-                x: number;
-                y: number;
-              }) => ({
-                id: bookmark.id,
-                url: bookmark.url,
-                title: bookmark.title || bookmark.domain,
-                domain: bookmark.domain,
-                image: bookmark.imageUrl,
-                collectionId: bookmark.collectionId || undefined,
-                x: bookmark.x,
-                y: bookmark.y,
-              })
-            )
-          );
-
-          // Load collections
-          const collectionsResponse = await fetch("/api/collections");
-          if (collectionsResponse.ok) {
-            const { collections: collectionsData } =
-              await collectionsResponse.json();
-            setCollections(collectionsData || []);
-          }
-
-          toast.success(
-            `Loaded ${bookmarks.length} bookmark${
-              bookmarks.length !== 1 ? "s" : ""
-            }`
-          );
-        } else {
-          toast.error("Failed to load bookmarks");
-        }
-      } catch (error) {
-        console.error("Failed to load data:", error);
-        toast.error("Failed to load data");
-      } finally {
-        setIsLoading(false);
-      }
+    if (!isLoading && nodes.length > 0) {
+      toast.success(
+        `Loaded ${nodes.length} bookmark${nodes.length !== 1 ? "s" : ""}`
+      );
     }
-    loadData();
-  }, []);
+  }, [isLoading, nodes.length]);
 
   // Cleanup event listeners on unmount
   useEffect(() => {
@@ -311,17 +272,7 @@ export default function Board2D() {
     const newX = Math.round(nodeStartRef.current.x + dx);
     const newY = Math.round(nodeStartRef.current.y + dy);
 
-    setNodes((curr) =>
-      curr.map((n) =>
-        n.id === id
-          ? {
-              ...n,
-              x: newX,
-              y: newY,
-            }
-          : n
-      )
-    );
+        updateNodePositionOptimistic(id, newX, newY);
   }
 
   async function onNodeDragEnd(e: MouseEvent) {
@@ -354,7 +305,7 @@ export default function Board2D() {
           console.error("Failed to save bookmark position:", error);
           toast.error("Failed to save position");
         } finally {
-          setIsUpdatingPosition(null);
+        setIsUpdatingPosition(null);
         }
       }
     }
@@ -400,7 +351,7 @@ export default function Board2D() {
           y: bookmark.y,
         };
 
-        setNodes((n) => [...n, newNode]);
+        addNodeOptimistic(newNode);
         toast.success("Bookmark added successfully!");
 
         // Optional: upgrade title/desc/image via your /api/scrape route
@@ -422,19 +373,12 @@ export default function Board2D() {
       const res = await fetch(`/api/scrape?url=${encodeURIComponent(link)}`);
       const meta = await res.json();
 
-      // Update local state
-      setNodes((curr) =>
-        curr.map((n) =>
-          n.id === id
-            ? {
-                ...n,
-                title: meta.title ?? n.title,
-                domain: meta.domain ?? n.domain,
-                image: meta.imageUrl ?? n.image, // keep screenshot if OG missing
-              }
-            : n
-        )
-      );
+      // Update local cached state for metadata
+      updateNodeMetaOptimistic(id, {
+        title: meta.title,
+        domain: meta.domain,
+        image: meta.imageUrl,
+      });
 
       // Update database with enriched metadata
       try {
@@ -495,16 +439,7 @@ export default function Board2D() {
 
       if (response.ok) {
         const { collection } = await response.json();
-        setCollections((prev) => [...prev, collection]);
-
-        // Update nodes to reflect the new collection assignment
-        setNodes((prev) =>
-          prev.map((node) =>
-            suggestion.bookmarkIds.includes(node.id)
-              ? { ...node, collectionId: collection.id }
-              : node
-          )
-        );
+        addCollectionOptimistic(collection);
 
         // Remove the accepted suggestion
         setClusterSuggestions((prev) => prev.filter((s) => s !== suggestion));
@@ -564,8 +499,7 @@ export default function Board2D() {
         method: "DELETE",
       });
       if (response.ok) {
-        setNodes([]);
-        setCollections([]); // Clear collections when clearing all bookmarks
+        clearAllOptimistic();
         toast.success("All bookmarks and collections cleared");
       } else {
         toast.error("Failed to clear bookmarks");
@@ -585,7 +519,7 @@ export default function Board2D() {
         method: "DELETE",
       });
       if (response.ok) {
-        setNodes((prev) => prev.filter((node) => node.id !== bookmarkId));
+        deleteNodeOptimistic(bookmarkId);
         toast.success("Bookmark deleted");
       } else {
         toast.error("Failed to delete bookmark");
@@ -618,16 +552,7 @@ export default function Board2D() {
       });
       if (response.ok) {
         // Remove collection from state
-        setCollections((prev) => prev.filter((c) => c.id !== collectionId));
-
-        // Update nodes to remove collection assignment
-        setNodes((prev) =>
-          prev.map((node) =>
-            node.collectionId === collectionId
-              ? { ...node, collectionId: undefined }
-              : node
-          )
-        );
+        deleteCollectionOptimistic(collectionId);
 
         toast.success("Collection deleted");
       } else {
